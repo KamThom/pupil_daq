@@ -29,6 +29,7 @@ from daq_gui.protocol import (
     vis_dac_code_to_current_ma,
 )
 from daq_gui.serial_worker import ConnectionEvent, SerialWorker
+from daq_gui import theme
 
 
 PLOT_WINDOW_S = 30.0   # seconds of history shown in the rolling window
@@ -45,21 +46,76 @@ _EVENT_COMMANDS: dict[int, object] = {
 }
 
 
+def accent_button(parent: tk.Misc, text: str, command: object, accent: str, **kwargs: object) -> tuple[tk.Frame, ttk.Button]:
+    """A ttk.Button with a colored strip on its left edge, for buttons that signal a specific
+    action category (go/stop/primary/schedule). ttk can't color a single border side on its own,
+    so this wraps the button in a small colored frame and insets the button 3px from its left
+    edge to let that color show through. Buttons with no category should just use ttk.Button
+    directly — the default style already reads as a button (raised face + outline) on its own."""
+    wrap = tk.Frame(parent, background=accent)
+    btn = ttk.Button(wrap, text=text, command=command, **kwargs)
+    btn.pack(fill="both", expand=True, padx=(3, 0))
+    return wrap, btn
+
+
+def collapsible_section(
+    parent: tk.Misc, title: str, accent: str, start_open: bool = True
+) -> tuple[tk.Frame, tk.Frame]:
+    """A collapsible panel with a colored left edge and a clickable header (replaces ttk.LabelFrame,
+    which has no collapse support). Returns (outer, body): pack/grid `outer` into the layout, then
+    pack/grid content into `body`."""
+    outer = tk.Frame(parent, background=accent)
+    inner = tk.Frame(outer, background=theme.PANEL, padx=10, pady=8)
+    inner.pack(fill="both", expand=True, padx=(3, 0))
+
+    is_open = {"value": start_open}
+    header = tk.Frame(inner, background=theme.PANEL, cursor="hand2")
+    header.pack(fill="x")
+    arrow = tk.Label(
+        header, text="▾" if start_open else "▸",
+        background=theme.PANEL, foreground=theme.FG_MUTED, cursor="hand2",
+    )
+    arrow.pack(side="left", padx=(0, 6))
+    title_label = tk.Label(
+        header, text=title, background=theme.PANEL, foreground=theme.FG_MUTED,
+        font=("TkDefaultFont", 9, "bold"), cursor="hand2", anchor="w",
+    )
+    title_label.pack(side="left", fill="x", expand=True)
+
+    body = tk.Frame(inner, background=theme.PANEL)
+    if start_open:
+        body.pack(fill="both", expand=True, pady=(8, 0))
+
+    def toggle(_event: object = None) -> None:
+        if is_open["value"]:
+            body.pack_forget()
+            arrow.configure(text="▸")
+        else:
+            body.pack(fill="both", expand=True, pady=(8, 0))
+            arrow.configure(text="▾")
+        is_open["value"] = not is_open["value"]
+
+    for widget in (header, arrow, title_label):
+        widget.bind("<Button-1>", toggle)
+
+    return outer, body
+
+
 class PlotCanvas(tk.Frame):
     """Live dual-channel plot: CH1 IR PD and CH2 VIS PD in volts vs. elapsed time."""
 
-    _BG = "#111827"
-    _PANEL = "#1f2937"
-    _GRID = "#374151"
-    _FG = "#d1d5db"
+    _BG = theme.BG
+    _PANEL = theme.PANEL
+    _GRID = theme.BORDER
+    _FG = theme.FG
 
     # Selectable data sources for the third (bottom) subplot.
     _THIRD_CHANNEL_INFO: dict[str, dict[str, str]] = {
-        "sched": {"label": "VIS LED current (commanded)", "title": "VIS LED current", "ylabel": "VIS (mA)", "color": "#22c55e"},
-        "ch1": {"label": "CH1 IR Photodiode", "title": "CH1  IR Photodiode", "ylabel": "IR PD (V)", "color": "#3b82f6"},
-        "ch2": {"label": "CH2 VIS Photodiode", "title": "CH2  VIS Photodiode", "ylabel": "VIS PD (V)", "color": "#ef4444"},
-        "ch3": {"label": "CH3 VIS LED current sense", "title": "CH3  VIS LED current sense", "ylabel": "CH3 (V)", "color": "#a855f7"},
-        "ch4": {"label": "CH4 IR LED current sense", "title": "CH4  IR LED current sense", "ylabel": "CH4 (V)", "color": "#f97316"},
+        "sched": {"label": "VIS LED current (commanded)", "title": "VIS LED current", "ylabel": "VIS (mA)", "color": theme.GREEN},
+        "ch1": {"label": "CH1 IR Photodiode", "title": "CH1  IR Photodiode", "ylabel": "IR PD (V)", "color": theme.BLUE},
+        "ch2": {"label": "CH2 VIS Photodiode", "title": "CH2  VIS Photodiode", "ylabel": "VIS PD (V)", "color": theme.RED},
+        "ch3": {"label": "CH3 VIS LED current sense", "title": "CH3  VIS LED current sense", "ylabel": "CH3 (V)", "color": theme.PURPLE},
+        "ch4": {"label": "CH4 IR LED current sense", "title": "CH4  IR LED current sense", "ylabel": "CH4 (V)", "color": theme.ORANGE},
     }
 
     def __init__(self, master: tk.Misc, **kwargs: object) -> None:
@@ -86,11 +142,12 @@ class PlotCanvas(tk.Frame):
         self._t0: float | None = None
         self._last_draw: float = 0.0
         self._third_channel: str = "sched"
+        self._window_s: float = PLOT_WINDOW_S
 
         self._style_axes()
-        (self._line_ir,) = self._ax_ir.plot([], [], color="#3b82f6", lw=1.2)
-        (self._line_vis,) = self._ax_vis.plot([], [], color="#ef4444", lw=1.2)
-        (self._line_sched,) = self._ax_sched.plot([], [], color="#22c55e", lw=1.5, drawstyle="steps-post")
+        (self._line_ir,) = self._ax_ir.plot([], [], color=theme.BLUE, lw=1.2)
+        (self._line_vis,) = self._ax_vis.plot([], [], color=theme.RED, lw=1.2)
+        (self._line_sched,) = self._ax_sched.plot([], [], color=theme.GREEN, lw=1.5, drawstyle="steps-post")
 
     # ── public API ───────────────────────────────────────────────────────────
 
@@ -103,7 +160,7 @@ class PlotCanvas(tk.Frame):
         self._ch2_v.append(raw_to_volts(frame.high[1]))
         self._ch3_v.append(raw_to_volts(frame.high[2]))
         self._ch4_v.append(raw_to_volts(frame.high[3]))
-        cutoff = t - PLOT_WINDOW_S * 2
+        cutoff = t - self._window_s * 2
         while self._times and self._times[0] < cutoff:
             self._times.popleft()
             self._ch1_v.popleft()
@@ -121,6 +178,16 @@ class PlotCanvas(tk.Frame):
             if info["label"] == label:
                 self.set_third_channel(key)
                 return
+
+    def set_window_s(self, seconds: float) -> None:
+        seconds = max(1.0, float(seconds))
+        if seconds == self._window_s:
+            return
+        self._window_s = seconds
+        for ax in (self._ax_ir, self._ax_vis, self._ax_sched):
+            ax.set_xlim(0, seconds)
+        self._redraw()
+        self._mpl_canvas.draw_idle()
 
     def set_third_channel(self, key: str) -> None:
         if key not in self._THIRD_CHANNEL_INFO or key == self._third_channel:
@@ -172,9 +239,9 @@ class PlotCanvas(tk.Frame):
         self._line_vis.set_data([], [])
         self._line_sched.set_data([], [])
         for ax in (self._ax_ir, self._ax_vis):
-            ax.set_xlim(0, PLOT_WINDOW_S)
+            ax.set_xlim(0, self._window_s)
             ax.set_ylim(-5.5, 5.5)
-        self._ax_sched.set_xlim(0, PLOT_WINDOW_S)
+        self._ax_sched.set_xlim(0, self._window_s)
         self._ax_sched.set_ylim(-0.5, 35) if self._third_channel == "sched" else self._ax_sched.set_ylim(-5.5, 5.5)
         self._mpl_canvas.draw_idle()
 
@@ -197,9 +264,9 @@ class PlotCanvas(tk.Frame):
         self._ax_vis.set_title("CH2  VIS Photodiode", color=self._FG, fontsize=9, pad=3)
         self._ax_sched.set_title("VIS LED current", color=self._FG, fontsize=9, pad=3)
         for ax in (self._ax_ir, self._ax_vis):
-            ax.set_xlim(0, PLOT_WINDOW_S)
+            ax.set_xlim(0, self._window_s)
             ax.set_ylim(-5.5, 5.5)
-        self._ax_sched.set_xlim(0, PLOT_WINDOW_S)
+        self._ax_sched.set_xlim(0, self._window_s)
         self._ax_sched.set_ylim(-0.5, 35)
 
     def _throttled_redraw(self) -> None:
@@ -213,7 +280,7 @@ class PlotCanvas(tk.Frame):
         if not self._times:
             return
         t_now = self._times[-1]
-        t_min = max(0.0, t_now - PLOT_WINDOW_S)
+        t_min = max(0.0, t_now - self._window_s)
 
         times = list(self._times)
         ch1 = list(self._ch1_v)
@@ -264,9 +331,9 @@ class PlotCanvas(tk.Frame):
         self._event_lines.clear()
         for t_ev, _ in self._event_markers:
             if t_min <= t_ev <= t_now + 0.5:
-                l1 = self._ax_ir.axvline(t_ev, color="#fbbf24", lw=1.0, ls="--", alpha=0.7)
-                l2 = self._ax_vis.axvline(t_ev, color="#fbbf24", lw=1.0, ls="--", alpha=0.7)
-                l3 = self._ax_sched.axvline(t_ev, color="#fbbf24", lw=1.0, ls="--", alpha=0.7)
+                l1 = self._ax_ir.axvline(t_ev, color=theme.AMBER, lw=1.0, ls="--", alpha=0.7)
+                l2 = self._ax_vis.axvline(t_ev, color=theme.AMBER, lw=1.0, ls="--", alpha=0.7)
+                l3 = self._ax_sched.axvline(t_ev, color=theme.AMBER, lw=1.0, ls="--", alpha=0.7)
                 self._event_lines.extend([l1, l2, l3])
 
         self._mpl_canvas.draw_idle()
@@ -280,9 +347,10 @@ class _ScrollFrame(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        self._canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        self._canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, background=theme.BG)
         self._sb = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
         self.inner = ttk.Frame(self._canvas)
+        self._max_inner_width = 0
 
         self._win = self._canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self._canvas.configure(yscrollcommand=self._sb.set)
@@ -298,7 +366,11 @@ class _ScrollFrame(ttk.Frame):
         self._canvas.bind("<Leave>", lambda _: self._canvas.unbind_all("<MouseWheel>"))
 
     def _on_inner_configure(self, _event: tk.Event) -> None:
-        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._canvas.update_idletasks()
+        # Width only ever grows -- collapsing a section shouldn't make the sidebar narrower,
+        # just shorter. Height (scrollregion) tracks content exactly in both directions.
+        self._max_inner_width = max(self._max_inner_width, self.inner.winfo_reqwidth())
+        self._canvas.configure(width=self._max_inner_width, scrollregion=self._canvas.bbox("all"))
 
     def _on_canvas_configure(self, event: tk.Event) -> None:
         self._canvas.itemconfig(self._win, width=event.width)
@@ -320,6 +392,7 @@ class AddDeviceDialog(tk.Toplevel):
 
     def __init__(self, master: tk.Misc, available_ports: list[str]) -> None:
         super().__init__(master)
+        self.configure(background=theme.BG)
         self.title("Add Device")
         self.resizable(False, False)
         self.grab_set()
@@ -347,7 +420,8 @@ class AddDeviceDialog(tk.Toplevel):
         buttons = ttk.Frame(frame)
         buttons.grid(row=2, column=0, columnspan=2, sticky="e")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=(4, 0))
-        ttk.Button(buttons, text="Add", command=self._confirm).pack(side="right")
+        wrap, _btn = accent_button(buttons, "Add", self._confirm, theme.GREEN)
+        wrap.pack(side="right")
 
         self.bind("<Return>", lambda _: self._confirm())
         self.bind("<Escape>", lambda _: self.destroy())
@@ -418,53 +492,71 @@ class DevicePanel(ttk.Frame):
         scroll.grid(row=0, column=0, sticky="ns", padx=(8, 0), pady=8)
         controls = scroll.inner
 
-        conn_frame = ttk.LabelFrame(controls, text="Connection", padding=8)
-        conn_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(conn_frame, text=f"Port: {self.port}", font=("Consolas", 9)).pack(anchor="w")
-        ttk.Label(conn_frame, textvariable=self.connection_var).pack(anchor="w", pady=(4, 0))
-        self.connect_button = ttk.Button(conn_frame, text="Disconnect", command=self.toggle_connection)
-        self.connect_button.pack(fill="x", pady=(6, 0))
+        ttk.Label(controls, text="Animal ID").pack(anchor="w", pady=(0, 2))
+        ttk.Entry(controls, textvariable=self.animal_id_var, width=18).pack(fill="x", pady=(0, 8))
 
-        id_frame = ttk.LabelFrame(controls, text="Animal ID", padding=8)
-        id_frame.pack(fill="x", pady=(0, 8))
-        ttk.Entry(id_frame, textvariable=self.animal_id_var, width=18).pack(fill="x")
+        outer, body = collapsible_section(controls, "CONNECTION", theme.BLUE, start_open=True)
+        outer.pack(fill="x", pady=(0, 8))
+        tk.Label(body, text=f"Port: {self.port}", background=theme.PANEL, foreground=theme.FG, font=("Consolas", 9)).pack(anchor="w")
+        tk.Label(body, textvariable=self.connection_var, background=theme.PANEL, foreground=theme.FG_MUTED).pack(anchor="w", pady=(4, 0))
+        self._connect_wrap, self.connect_button = accent_button(body, "Disconnect", self.toggle_connection, theme.RED)
+        self._connect_wrap.pack(fill="x", pady=(6, 0))
 
-        operation = ttk.LabelFrame(controls, text="Operation", padding=8)
-        operation.pack(fill="x", pady=(0, 8))
-        ttk.Button(operation, text="Start device", command=lambda: self.send(0, 1)).pack(fill="x")
-        ttk.Button(operation, text="Stop device", command=lambda: self.send(0, 0)).pack(fill="x", pady=4)
-        ttk.Button(operation, text="Read status", command=lambda: self.send(7, 0)).pack(fill="x")
-        ttk.Button(operation, text="Single ADC read", command=lambda: self.send(8, 0)).pack(fill="x", pady=(4, 0))
+        outer, body = collapsible_section(controls, "OPERATION", theme.BLUE, start_open=True)
+        outer.pack(fill="x", pady=(0, 8))
+        wrap, _btn = accent_button(body, "Start device", lambda: self.send(0, 1), theme.GREEN)
+        wrap.pack(fill="x", pady=(0, 4))
+        wrap, _btn = accent_button(body, "Stop device", lambda: self.send(0, 0), theme.RED)
+        wrap.pack(fill="x", pady=(0, 4))
+        ttk.Button(body, text="Read status", command=lambda: self.send(7, 0)).pack(fill="x", pady=(0, 4))
+        ttk.Button(body, text="Single ADC read", command=lambda: self.send(8, 0)).pack(fill="x")
 
-        rec_frame = ttk.LabelFrame(controls, text="Recording", padding=8)
-        rec_frame.pack(fill="x", pady=(0, 8))
-        self._spin(rec_frame, "Duration (s, 0 = unlimited)", self.duration_var, 0, 86400, 10)
+        outer, body = collapsible_section(controls, "RECORDING", theme.BLUE, start_open=True)
+        outer.pack(fill="x", pady=(0, 8))
+        self._compact_row(body, "Duration (s, 0=unlim.)", self.duration_var, 0, 86400, 10).pack(fill="x")
 
-        sched_frame = ttk.LabelFrame(controls, text="VIS Schedule", padding=8)
-        sched_frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(sched_frame, textvariable=self._sched_status_var, foreground="#6b7280").pack(anchor="w")
-        ttk.Button(sched_frame, text="Edit schedule...", command=self._open_schedule_editor).pack(fill="x", pady=(4, 0))
+        outer, body = collapsible_section(controls, "VIS SCHEDULE", theme.PURPLE, start_open=True)
+        outer.pack(fill="x", pady=(0, 8))
+        tk.Label(body, textvariable=self._sched_status_var, background=theme.PANEL, foreground=theme.FG_MUTED).pack(anchor="w", pady=(0, 6))
+        wrap, _btn = accent_button(body, "Edit schedule...", self._open_schedule_editor, theme.PURPLE)
+        wrap.pack(fill="x")
 
-        settings = ttk.LabelFrame(controls, text="Outputs and gains", padding=8)
-        settings.pack(fill="x", pady=(0, 8))
-        self._spin(settings, "Visible PD gain (0-255)", self.vis_gain_var, 0, 255, 1)
-        ttk.Button(settings, text="Apply visible gain", command=lambda: self.send(1, self.vis_gain_var.get())).pack(fill="x")
-        self._spin(settings, "IR PD gain (0-255)", self.ir_gain_var, 0, 255, 1)
-        ttk.Button(settings, text="Apply IR gain", command=lambda: self.send(2, self.ir_gain_var.get())).pack(fill="x")
-        self._spin(settings, "Visible LED DAC code (0-4095)", self.vis_dac_var, 0, 4095, 1)
-        ttk.Label(settings, textvariable=self.vis_current_label_var).pack(anchor="w", pady=(0, 4))
-        ttk.Button(settings, text="Apply visible LED", command=lambda: self.send(3, self.vis_dac_var.get())).pack(fill="x")
-        self._spin(settings, "IR pulse (us)", self.pulse_var, 0, 1_000_000, 100)
-        ttk.Button(settings, text="Pulse IR LED", command=lambda: self.send(4, self.pulse_var.get())).pack(fill="x")
+        outer, body = collapsible_section(controls, "OUTPUTS AND GAINS", theme.BLUE, start_open=False)
+        outer.pack(fill="x", pady=(0, 8))
+        self._compact_row(
+            body, "Visible PD gain (0-255)", self.vis_gain_var, 0, 255, 1,
+            lambda: self.send(1, self.vis_gain_var.get()), theme.BLUE,
+        ).pack(fill="x", pady=(0, 4))
+        self._compact_row(
+            body, "IR PD gain (0-255)", self.ir_gain_var, 0, 255, 1,
+            lambda: self.send(2, self.ir_gain_var.get()), theme.BLUE,
+        ).pack(fill="x", pady=(0, 4))
+        self._compact_row(
+            body, "VIS LED DAC (0-4095)", self.vis_dac_var, 0, 4095, 1,
+            lambda: self.send(3, self.vis_dac_var.get()), theme.BLUE, extra_var=self.vis_current_label_var,
+        ).pack(fill="x", pady=(0, 4))
+        self._compact_row(
+            body, "IR pulse (us)", self.pulse_var, 0, 1_000_000, 100,
+            lambda: self.send(4, self.pulse_var.get()), theme.BLUE,
+        ).pack(fill="x")
 
-        stream = ttk.LabelFrame(controls, text="Streaming", padding=8)
-        stream.pack(fill="x", pady=(0, 8))
-        self._spin(stream, "Sample rate (Hz, 10-250)", self.sample_rate_var, 10, 250, 1)
-        ttk.Button(stream, text="Apply sample rate", command=lambda: self.send(11, self.sample_rate_var.get())).pack(fill="x")
-        self._spin(stream, "Decimation", self.decimation_var, 1, 65535, 1)
-        ttk.Button(stream, text="Apply decimation", command=lambda: self.send(10, self.decimation_var.get())).pack(fill="x")
-        ttk.Button(stream, text="Enable stream", command=lambda: self.send(9, 1)).pack(fill="x", pady=4)
-        ttk.Button(stream, text="Disable stream", command=lambda: self.send(9, 0)).pack(fill="x")
+        outer, body = collapsible_section(controls, "STREAMING", theme.BLUE, start_open=False)
+        outer.pack(fill="x", pady=(0, 8))
+        self._compact_row(
+            body, "Sample rate (Hz, 10-250)", self.sample_rate_var, 10, 250, 1,
+            lambda: self.send(11, self.sample_rate_var.get()), theme.BLUE,
+        ).pack(fill="x", pady=(0, 4))
+        self._compact_row(
+            body, "Decimation", self.decimation_var, 1, 65535, 1,
+            lambda: self.send(10, self.decimation_var.get()), theme.BLUE,
+        ).pack(fill="x", pady=(0, 6))
+        stream_btns = tk.Frame(body, background=theme.PANEL)
+        stream_btns.pack(fill="x")
+        stream_btns.columnconfigure((0, 1), weight=1)
+        wrap, _btn = accent_button(stream_btns, "Enable stream", lambda: self.send(9, 1), theme.GREEN)
+        wrap.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        wrap, _btn = accent_button(stream_btns, "Disable stream", lambda: self.send(9, 0), theme.RED)
+        wrap.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         # --- Right: plot + log ---
         main = ttk.Frame(self, padding=(8, 8, 8, 8))
@@ -493,27 +585,76 @@ class DevicePanel(ttk.Frame):
             "<<ComboboxSelected>>",
             lambda _event: self.plot.set_third_channel_by_label(self.third_channel_var.get()),
         )
+        ttk.Label(plot_actions, text="Window (s):").pack(side="left", padx=(12, 4))
+        self.plot_window_var = tk.IntVar(value=int(PLOT_WINDOW_S))
+        ttk.Spinbox(
+            plot_actions, textvariable=self.plot_window_var, from_=2, to=300, increment=1, width=5
+        ).pack(side="left")
+        self.plot_window_var.trace_add("write", self._on_plot_window_change)
         ttk.Button(plot_actions, text="Clear plot", command=self.plot.clear).pack(side="right")
-        self.record_button = ttk.Button(plot_actions, text="Start recording", command=self.toggle_recording)
-        self.record_button.pack(side="right", padx=6)
-        ttk.Label(plot_actions, textvariable=self.recording_var).pack(side="right")
+        self._record_wrap, self.record_button = accent_button(
+            plot_actions, "Start recording", self.toggle_recording, theme.GREEN
+        )
+        self._record_wrap.pack(side="right", padx=6)
+        self.recording_label = ttk.Label(plot_actions, textvariable=self.recording_var, style="Muted.TLabel")
+        self.recording_label.pack(side="right")
 
-        self.log = ScrolledText(main, height=12, state="disabled", font=("Consolas", 9))
+        self.log = ScrolledText(
+            main,
+            height=12,
+            state="disabled",
+            font=("Consolas", 9),
+            background=theme.PANEL,
+            foreground=theme.FG,
+            insertbackground=theme.FG,
+            selectbackground=theme.BLUE,
+            selectforeground="#f9fafb",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground=theme.BORDER,
+            highlightcolor=theme.BLUE,
+        )
+        self.log.vbar.configure(
+            background=theme.PANEL,
+            troughcolor=theme.BG,
+            activebackground=theme.BORDER,
+            highlightthickness=0,
+            borderwidth=0,
+        )
         self.log.grid(row=2, column=0, sticky="nsew")
 
     @staticmethod
-    def _spin(
-        parent: ttk.LabelFrame,
+    def _compact_row(
+        parent: tk.Misc,
         label: str,
         variable: tk.Variable,
         minimum: int | float,
         maximum: int | float,
         increment: int | float,
-    ) -> None:
-        ttk.Label(parent, text=label).pack(anchor="w", pady=(5, 0))
-        ttk.Spinbox(
-            parent, textvariable=variable, from_=minimum, to=maximum, increment=increment, width=20
-        ).pack(fill="x")
+        command: object = None,
+        accent: str | None = None,
+        extra_var: tk.StringVar | None = None,
+    ) -> tk.Frame:
+        """One row: label, spinbox, optional live readout, optional Apply button — replaces the old
+        stacked label/spinbox/button layout to keep the sidebar from running on so long."""
+        row = tk.Frame(parent, background=theme.PANEL)
+        tk.Label(row, text=label, background=theme.PANEL, foreground=theme.FG, anchor="w", width=22).grid(
+            row=0, column=0, sticky="w"
+        )
+        spin = ttk.Spinbox(row, textvariable=variable, from_=minimum, to=maximum, increment=increment, width=8)
+        spin.grid(row=0, column=1, sticky="w", padx=(6, 6))
+        spin.set(str(variable.get()))
+        col = 2
+        if extra_var is not None:
+            tk.Label(row, textvariable=extra_var, background=theme.PANEL, foreground=theme.FG_MUTED, width=10, anchor="w").grid(
+                row=0, column=col, sticky="w", padx=(0, 6)
+            )
+            col += 1
+        if command is not None:
+            wrap, _btn = accent_button(row, "Apply", command, accent)
+            wrap.grid(row=0, column=col, sticky="w")
+        return row
 
     def toggle_connection(self) -> None:
         if self.worker.connected:
@@ -521,6 +662,7 @@ class DevicePanel(ttk.Frame):
         else:
             self.connection_var.set("Connecting...")
             self.connect_button.configure(text="Disconnect")
+            self._connect_wrap.configure(background=theme.RED)
             self.worker.connect(self.port)
 
     def _disconnect_sequence(self) -> None:
@@ -587,6 +729,15 @@ class DevicePanel(ttk.Frame):
             return
         self.vis_current_label_var.set(f"= {vis_dac_code_to_current_ma(dac_code):.2f} mA")
 
+    def _on_plot_window_change(self, *_args: object) -> None:
+        try:
+            seconds = self.plot_window_var.get()
+        except tk.TclError:
+            return
+        if seconds <= 0:
+            return
+        self.plot.set_window_s(seconds)
+
     def _poll_serial(self) -> None:
         if not self._alive:
             return
@@ -596,6 +747,7 @@ class DevicePanel(ttk.Frame):
                 if isinstance(item, ConnectionEvent):
                     self.connection_var.set(item.detail)
                     self.connect_button.configure(text="Disconnect" if item.connected else "Connect")
+                    self._connect_wrap.configure(background=theme.RED if item.connected else theme.GREEN)
                     if not item.connected:
                         self.stop_recording()
                         self._reset_controls()
@@ -730,7 +882,9 @@ class DevicePanel(ttk.Frame):
         dur = self._recording_duration
         dur_label = f"{dur}s" if dur else "unlimited"
         self.recording_var.set(f"Recording — 0s / {dur_label}" if dur else "Recording — 0s elapsed")
+        self.recording_label.configure(style="Recording.TLabel")
         self.record_button.configure(text="Stop recording")
+        self._record_wrap.configure(background=theme.RED)
         return True
 
     def stop_recording(self) -> None:
@@ -747,7 +901,9 @@ class DevicePanel(ttk.Frame):
         self._recording_start = None
         self._recording_duration = 0
         self.recording_var.set("Not recording")
+        self.recording_label.configure(style="Muted.TLabel")
         self.record_button.configure(text="Start recording")
+        self._record_wrap.configure(background=theme.GREEN)
 
     def _record_frame(self, frame: DataFrame) -> None:
         if self.csv_writer is None:
@@ -803,6 +959,7 @@ class ScheduleEditorDialog(tk.Toplevel):
 
     def __init__(self, master: tk.Misc, panel: DevicePanel) -> None:
         super().__init__(master)
+        self.configure(background=theme.BG)
         self.panel = panel
         self.title(f"VIS Light Schedule — {panel.port}")
         self.resizable(True, True)
@@ -866,13 +1023,14 @@ class ScheduleEditorDialog(tk.Toplevel):
         ttk.Label(
             self,
             text="Each step holds for its duration, then the next step starts. Schedule begins when recording starts. Upload before recording.",
-            foreground="#6b7280",
+            style="Muted.TLabel",
             wraplength=450,
         ).pack(padx=8, pady=(0, 4))
 
         bottom = ttk.Frame(self, padding=(8, 4, 8, 8))
         bottom.pack(fill="x")
-        ttk.Button(bottom, text="Upload to device", command=self._upload).pack(side="left")
+        wrap, _btn = accent_button(bottom, "Upload to device", self._upload, theme.PURPLE)
+        wrap.pack(side="left")
         ttk.Button(bottom, text="Close", command=self.destroy).pack(side="right")
 
     def _refresh_tree(self) -> None:
@@ -972,6 +1130,8 @@ class DaqApp(tk.Tk):
         self.geometry("1280x820")
         self.minsize(960, 720)
 
+        theme.apply(self)
+
         self.shared = SharedConfig()
         self.panels: list[DevicePanel] = []
         self._placeholder_tab: ttk.Frame | None = None
@@ -990,13 +1150,17 @@ class DaqApp(tk.Tk):
 
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=8)
 
-        ttk.Button(toolbar, text="Add device", command=self._add_device).pack(side="left", padx=(0, 4))
-        ttk.Button(toolbar, text="Remove device", command=self._remove_device).pack(side="left", padx=(0, 8))
+        wrap, _btn = accent_button(toolbar, "Add device", self._add_device, theme.BLUE)
+        wrap.pack(side="left", padx=(0, 4))
+        wrap, _btn = accent_button(toolbar, "Remove device", self._remove_device, theme.RED)
+        wrap.pack(side="left", padx=(0, 8))
 
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=8)
 
-        ttk.Button(toolbar, text="Start all", command=self._start_all).pack(side="left", padx=(0, 4))
-        ttk.Button(toolbar, text="Stop all", command=self._stop_all).pack(side="left")
+        wrap, _btn = accent_button(toolbar, "Start all", self._start_all, theme.GREEN)
+        wrap.pack(side="left", padx=(0, 4))
+        wrap, _btn = accent_button(toolbar, "Stop all", self._stop_all, theme.RED)
+        wrap.pack(side="left")
 
         ttk.Separator(self, orient="horizontal").pack(fill="x")
 
@@ -1007,7 +1171,7 @@ class DaqApp(tk.Tk):
         ttk.Label(
             placeholder,
             text='Click "Add device" to connect a DAQ board.',
-            foreground="#6b7280",
+            style="Muted.TLabel",
         ).pack(expand=True)
         self.notebook.add(placeholder, text="No devices")
         self._placeholder_tab = placeholder
@@ -1070,7 +1234,7 @@ class DaqApp(tk.Tk):
             ttk.Label(
                 placeholder,
                 text='Click "Add device" to connect a DAQ board.',
-                foreground="#6b7280",
+                style="Muted.TLabel",
             ).pack(expand=True)
             self.notebook.add(placeholder, text="No devices")
             self._placeholder_tab = placeholder

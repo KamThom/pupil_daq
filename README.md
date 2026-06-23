@@ -16,21 +16,6 @@ A pupillometry data acquisition system that measures pupil size and movement usi
 
 The firmware reads 4 ADC channels: CH1 (IR photodiode), CH2 (visible photodiode), CH3 (VIS LED current sense), CH4 (IR LED current sense). The main loop alternates IR LED on/off and samples both states. CSV recording captures the full `high`/`low`/`high − low` data for all 4 channels. The live GUI plot always shows raw LED-on (`high`) readings for CH1 and CH2 on its top two subplots; the third subplot is selectable (VIS LED current, or CH1–CH4) — see "Running the GUI" below.
 
-## Repo layout
-
-```
-pupil_daq/
-├── firmware/
-│   └── firmware.ino        # ESP32-S3 Arduino firmware (Arduino IDE)
-├── daq_gui/
-│   ├── app.py               # tkinter GUI — entry point via DaqApp / main()
-│   ├── protocol.py          # serial protocol: parsing incoming lines, formatting commands
-│   └── serial_worker.py     # background thread for serial I/O, queues results to GUI
-├── tests/
-│   └── test_protocol.py     # unittest tests (protocol.py only)
-└── requirements.txt         # pyserial>=3.5,<4  matplotlib>=3.7
-```
-
 ## Requirements
 
 - Python 3.12, Windows
@@ -135,8 +120,3 @@ There's no pulsing/blinking mode for the VIS LED — cmd 3 just sets it to a ste
 - VIS LED current: `current_mA = dac_code / 4095 * 33.0` (max ≈ 33 mA, limited by a 100 Ω sense resistor against the 3.3 V DAC reference) — the GUI computes this from the DAC code you set via `protocol.vis_dac_code_to_current_ma`
 
 These constants are duplicated in firmware and `daq_gui/protocol.py` — keep both in sync if hardware changes (e.g. a different sense resistor).
-
-## Notes
-
-- The hardware schematic (KiCad/PDF) lives outside this repo — check with the project owner before changing pin assignments or hardware design.
-- There is no packaging yet (`setup.py`/`pyproject.toml`) — run the GUI as a module/script as shown above.

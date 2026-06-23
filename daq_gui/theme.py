@@ -19,7 +19,6 @@ AMBER = "#fbbf24"
 
 
 def apply(root: tk.Tk) -> None:
-    """Apply a consistent dark theme, independent of OS/native ttk theme."""
     root.configure(background=BG)
 
     style = ttk.Style(root)

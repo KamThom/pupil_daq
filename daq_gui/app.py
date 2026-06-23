@@ -46,11 +46,6 @@ _EVENT_COMMANDS: dict[int, object] = {
 
 
 def accent_button(parent: tk.Misc, text: str, command: object, accent: str, **kwargs: object) -> tuple[tk.Frame, ttk.Button]:
-    """A ttk.Button with a colored strip on its left edge, for buttons that signal a specific
-    action category (go/stop/primary/schedule). ttk can't color a single border side on its own,
-    so this wraps the button in a small colored frame and insets the button 3px from its left
-    edge to let that color show through. Buttons with no category should just use ttk.Button
-    directly — the default style already reads as a button (raised face + outline) on its own."""
     wrap = tk.Frame(parent, background=accent)
     btn = ttk.Button(wrap, text=text, command=command, **kwargs)
     btn.pack(fill="both", expand=True, padx=(3, 0))
@@ -60,9 +55,6 @@ def accent_button(parent: tk.Misc, text: str, command: object, accent: str, **kw
 def collapsible_section(
     parent: tk.Misc, title: str, accent: str, start_open: bool = True
 ) -> tuple[tk.Frame, tk.Frame]:
-    """A collapsible panel with a colored left edge and a clickable header (replaces ttk.LabelFrame,
-    which has no collapse support). Returns (outer, body): pack/grid `outer` into the layout, then
-    pack/grid content into `body`."""
     outer = tk.Frame(parent, background=accent)
     inner = tk.Frame(outer, background=theme.PANEL, padx=10, pady=8)
     inner.pack(fill="both", expand=True, padx=(3, 0))
@@ -101,7 +93,6 @@ def collapsible_section(
 
 
 class PlotCanvas(tk.Frame):
-    """Live dual-channel plot: CH1 IR PD and CH2 VIS PD in volts vs. elapsed time."""
 
     _BG = theme.BG
     _PANEL = theme.PANEL
@@ -332,7 +323,6 @@ class PlotCanvas(tk.Frame):
 
 
 class _ScrollFrame(ttk.Frame):
-    """Vertically scrollable container. Pack/grid children into .inner."""
 
     def __init__(self, master: tk.Misc, **kwargs: object) -> None:
         super().__init__(master, **kwargs)
@@ -369,7 +359,6 @@ class _ScrollFrame(ttk.Frame):
 
 
 class SharedConfig:
-    """Experiment-level settings shared across all device panels."""
 
     def __init__(self) -> None:
         self.cohort_var = tk.StringVar(value="")
@@ -377,7 +366,6 @@ class SharedConfig:
 
 
 class AddDeviceDialog(tk.Toplevel):
-    """Modal dialog to choose a COM port and animal ID when adding a device."""
 
     def __init__(self, master: tk.Misc, available_ports: list[str]) -> None:
         super().__init__(master)
@@ -428,7 +416,6 @@ class AddDeviceDialog(tk.Toplevel):
 
 
 class DevicePanel(ttk.Frame):
-    """Per-device panel: plot, log, controls, and recording. One instance per notebook tab."""
 
     def __init__(
         self,
@@ -623,8 +610,6 @@ class DevicePanel(ttk.Frame):
         accent: str | None = None,
         extra_var: tk.StringVar | None = None,
     ) -> tk.Frame:
-        """One row: label, spinbox, optional live readout, optional Apply button — replaces the old
-        stacked label/spinbox/button layout to keep the sidebar from running on so long."""
         row = tk.Frame(parent, background=theme.PANEL)
         tk.Label(row, text=label, background=theme.PANEL, foreground=theme.FG, anchor="w", width=22).grid(
             row=0, column=0, sticky="w"
@@ -653,7 +638,6 @@ class DevicePanel(ttk.Frame):
             self.worker.connect(self.port)
 
     def _disconnect_sequence(self) -> None:
-        """Reset GUI to defaults, send those defaults to hardware, stop device, then disconnect."""
         self._reset_controls()
         for cmd_id, val in [(1, 0), (2, 0), (3, 0), (11, 100), (0, 0)]:
             try:
@@ -690,7 +674,6 @@ class DevicePanel(ttk.Frame):
         self._sched_dialog = ScheduleEditorDialog(self.winfo_toplevel(), self)
 
     def _upload_schedule(self) -> bool:
-        """Send CMD 12 (clear) + CMD 13 for each step in insertion order. Durations become cumulative absolute times."""
         if not self.worker.connected:
             messagebox.showerror("Not connected", "Connect to a device first.")
             return False
@@ -941,7 +924,7 @@ class DevicePanel(ttk.Frame):
 
 
 class ScheduleEditorDialog(tk.Toplevel):
-    """Non-modal dialog for editing the VIS light schedule for one DevicePanel."""
+
 
     def __init__(self, master: tk.Misc, panel: DevicePanel) -> None:
         super().__init__(master)

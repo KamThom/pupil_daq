@@ -3,8 +3,6 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-# Base palette (Slate dark) — shared with PlotCanvas so the whole app reads as one system.
-# Elevation scale, each step one shade lighter: BG < PANEL < BORDER (button face) < BORDER_LIGHT (outline/hover).
 BG = "#111827"
 PANEL = "#1f2937"
 BORDER = "#374151"
@@ -12,14 +10,12 @@ BORDER_LIGHT = "#475569"
 FG = "#e5e7eb"
 FG_MUTED = "#9ca3af"
 
-# Accent colors — match the live-plot channel colors (CH1 blue, CH2 red, sched green, CH3 purple, CH4 orange).
-# Used as the colored left-edge strip on action buttons and collapsible sections, not as full button fills.
 BLUE = "#3b82f6"
 GREEN = "#22c55e"
 RED = "#ef4444"
 ORANGE = "#f97316"
 PURPLE = "#a855f7"
-AMBER = "#fbbf24"   # event markers on the plot
+AMBER = "#fbbf24"
 
 
 def apply(root: tk.Tk) -> None:
@@ -41,10 +37,6 @@ def apply(root: tk.Tk) -> None:
 
     style.configure("TSeparator", background=BORDER)
 
-    # Neutral "raised" button: face one shade lighter than the surrounding panel, with a thin
-    # outline so it reads as a button at rest, not just on hover. Buttons that need to signal a
-    # specific action category get a colored left-edge strip via the accent_button() wrapper in
-    # app.py rather than a separate named style — see that helper for why.
     style.configure(
         "TButton",
         background=BORDER,

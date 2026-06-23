@@ -32,9 +32,8 @@ from daq_gui.serial_worker import ConnectionEvent, SerialWorker
 from daq_gui import theme
 
 
-PLOT_WINDOW_S = 30.0   # seconds of history shown in the rolling window
+PLOT_WINDOW_S = 30.0
 
-# Commands whose values are worth logging as events in the CSV.
 _EVENT_COMMANDS: dict[int, object] = {
     0:  lambda v: "Device ON" if v else "Device OFF",
     1:  lambda v: f"VIS gain={v}",
@@ -109,7 +108,6 @@ class PlotCanvas(tk.Frame):
     _GRID = theme.BORDER
     _FG = theme.FG
 
-    # Selectable data sources for the third (bottom) subplot.
     _THIRD_CHANNEL_INFO: dict[str, dict[str, str]] = {
         "sched": {"label": "VIS LED current (commanded)", "title": "VIS LED current", "ylabel": "VIS (mA)", "color": theme.GREEN},
         "ch1": {"label": "CH1 IR Photodiode", "title": "CH1  IR Photodiode", "ylabel": "IR PD (V)", "color": theme.BLUE},
@@ -136,7 +134,7 @@ class PlotCanvas(tk.Frame):
         self._ch3_v: deque[float] = deque()
         self._ch4_v: deque[float] = deque()
         self._sched_times: deque[float] = deque()
-        self._sched_levels: deque[float] = deque()   # mA
+        self._sched_levels: deque[float] = deque()
         self._event_markers: list[tuple[float, str]] = []
         self._event_lines: list = []
         self._t0: float | None = None
@@ -148,8 +146,6 @@ class PlotCanvas(tk.Frame):
         (self._line_ir,) = self._ax_ir.plot([], [], color=theme.BLUE, lw=1.2)
         (self._line_vis,) = self._ax_vis.plot([], [], color=theme.RED, lw=1.2)
         (self._line_sched,) = self._ax_sched.plot([], [], color=theme.GREEN, lw=1.5, drawstyle="steps-post")
-
-    # ── public API ───────────────────────────────────────────────────────────
 
     def add_frame(self, frame: DataFrame, host_time: float) -> None:
         if self._t0 is None:
@@ -245,8 +241,6 @@ class PlotCanvas(tk.Frame):
         self._ax_sched.set_ylim(-0.5, 35) if self._third_channel == "sched" else self._ax_sched.set_ylim(-5.5, 5.5)
         self._mpl_canvas.draw_idle()
 
-    # ── internal ─────────────────────────────────────────────────────────────
-
     def _style_axes(self) -> None:
         for ax in (self._ax_ir, self._ax_vis, self._ax_sched):
             ax.set_facecolor(self._PANEL)
@@ -271,7 +265,7 @@ class PlotCanvas(tk.Frame):
 
     def _throttled_redraw(self) -> None:
         now = time.time()
-        if now - self._last_draw < 0.05:   # cap at ~20 fps
+        if now - self._last_draw < 0.05:
             return
         self._last_draw = now
         self._redraw()
@@ -302,14 +296,13 @@ class PlotCanvas(tk.Frame):
         self._ax_ir.set_xlim(t_min, t_now + 0.5)
 
         if self._third_channel == "sched":
-            # VIS schedule step plot — extend last level to right edge of window
             sched_t = list(self._sched_times)
             sched_y = list(self._sched_levels)
             if sched_t:
                 sched_t.append(t_now + 0.5)
                 sched_y.append(sched_y[-1])
                 self._line_sched.set_data(sched_t, sched_y)
-                hi = max(sched_y[:-1])   # exclude phantom point
+                hi = max(sched_y[:-1])
                 self._ax_sched.set_ylim(-0.5, max(hi * 1.2, 2.0))
             else:
                 self._line_sched.set_data([], [])
@@ -322,7 +315,6 @@ class PlotCanvas(tk.Frame):
                 pad = max((hi - lo) * 0.1, 0.05)
                 self._ax_sched.set_ylim(lo - pad, hi + pad)
 
-        # Rebuild event marker lines across all three axes
         for ln in self._event_lines:
             try:
                 ln.remove()
@@ -361,14 +353,11 @@ class _ScrollFrame(ttk.Frame):
         self._canvas.grid(row=0, column=0, sticky="nsew")
         self._sb.grid(row=0, column=1, sticky="ns")
 
-        # Bind mouse-wheel only while the pointer is over the scroll area.
         self._canvas.bind("<Enter>", lambda _: self._canvas.bind_all("<MouseWheel>", self._on_wheel))
         self._canvas.bind("<Leave>", lambda _: self._canvas.unbind_all("<MouseWheel>"))
 
     def _on_inner_configure(self, _event: tk.Event) -> None:
         self._canvas.update_idletasks()
-        # Width only ever grows -- collapsing a section shouldn't make the sidebar narrower,
-        # just shorter. Height (scrollregion) tracks content exactly in both directions.
         self._max_inner_width = max(self._max_inner_width, self.inner.winfo_reqwidth())
         self._canvas.configure(width=self._max_inner_width, scrollregion=self._canvas.bbox("all"))
 
@@ -487,7 +476,6 @@ class DevicePanel(ttk.Frame):
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
 
-        # --- Left controls column (scrollable) ---
         scroll = _ScrollFrame(self)
         scroll.grid(row=0, column=0, sticky="ns", padx=(8, 0), pady=8)
         controls = scroll.inner
@@ -558,7 +546,6 @@ class DevicePanel(ttk.Frame):
         wrap, _btn = accent_button(stream_btns, "Disable stream", lambda: self.send(9, 0), theme.RED)
         wrap.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
-        # --- Right: plot + log ---
         main = ttk.Frame(self, padding=(8, 8, 8, 8))
         main.grid(row=0, column=1, sticky="nsew")
         main.columnconfigure(0, weight=1)
@@ -668,7 +655,6 @@ class DevicePanel(ttk.Frame):
     def _disconnect_sequence(self) -> None:
         """Reset GUI to defaults, send those defaults to hardware, stop device, then disconnect."""
         self._reset_controls()
-        # Send defaults then stop; break on first failure (port already gone).
         for cmd_id, val in [(1, 0), (2, 0), (3, 0), (11, 100), (0, 0)]:
             try:
                 self.worker.send(command(cmd_id, val))
@@ -1254,10 +1240,10 @@ class DaqApp(tk.Tk):
         for panel in connected:
             animal = panel.animal_id_var.get() or panel.port
             path = str(Path(save_dir) / f"{cohort}_{animal}_{test}_{stamp}.csv")
-            panel._upload_schedule()   # clear + upload steps
-            panel.send(0, 1)           # start device
-            panel.send(9, 1)           # enable stream
-            panel.start_recording(path=path)   # opens CSV, then sends cmd 14 to start schedule
+            panel._upload_schedule()
+            panel.send(0, 1)
+            panel.send(9, 1)
+            panel.start_recording(path=path)
 
     def _stop_all(self) -> None:
         for panel in self.panels:

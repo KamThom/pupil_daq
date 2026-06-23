@@ -18,6 +18,12 @@
     9,0       Disable ADC streaming
     9,1       Enable ADC streaming while operating
     10,N      Set ADC stream decimation, prints every N operating loops
+    11,N      Set sample rate to N Hz (clamped 10-250); default 100
+    12,0      Clear VIS light schedule (schedCount=0, schedIdx=0)
+    13,T,D    Append step: at T seconds after schedule start, set VIS LED to DAC code D (0-4095)
+              Firmware emits SCHED,T,D on serial when each step fires.
+    14,0      Start schedule execution (resets clock and index)
+    15,0      Stop schedule execution
 */
 
 #define SDA_PIN 3
@@ -38,8 +44,19 @@ bool streamAdc = false;
 uint16_t visledlevel = 0;
 uint8_t visibleGain = 0;
 uint8_t irGain = 0;
-uint16_t streamDecimation = 100;
+uint16_t streamDecimation = 10;
 uint32_t sampleCounter = 0;
+uint32_t sampleRateHz = 100;
+uint32_t samplePeriodUs = 10000;   // 1 000 000 / sampleRateHz
+uint32_t lastSampleUs = 0;
+
+#define MAX_SCHED 32
+uint32_t schedTimesS[MAX_SCHED];
+uint16_t schedDac[MAX_SCHED];
+uint8_t schedCount = 0;
+uint8_t schedIdx = 0;
+uint32_t schedStartUs = 0;
+bool schedRunning = false;
 
 uint16_t lowdata[4];
 uint16_t highdata[4];
@@ -133,6 +150,12 @@ void loop() {
   }
 
   if (isoperating) {
+    uint32_t now = micros();
+    if (now - lastSampleUs < samplePeriodUs) {
+      return;
+    }
+    lastSampleUs = now;
+
     digitalWrite(IRLED_PIN, HIGH);
     delayMicroseconds(500);
 
@@ -153,12 +176,22 @@ void loop() {
     } else {
       sampleCounter++;
 
+      if (schedRunning && schedIdx < schedCount) {
+        uint32_t elapsedS = (micros() - schedStartUs) / 1000000UL;
+        while (schedIdx < schedCount && elapsedS >= schedTimesS[schedIdx]) {
+          setVisLed(schedDac[schedIdx]);
+          Serial.print("SCHED,");
+          Serial.print(schedTimesS[schedIdx]);
+          Serial.print(",");
+          Serial.println(schedDac[schedIdx]);
+          schedIdx++;
+        }
+      }
+
       if (streamAdc && streamDecimation > 0 && (sampleCounter % streamDecimation == 0)) {
         printAdcStreamLine();
       }
     }
-
-    delay(1);
   }
 }
 
@@ -172,8 +205,9 @@ void parseserial() {
 
   long command = 0;
   long value = 0;
+  long value2 = 0;
 
-  if (sscanf(serialData.c_str(), "%ld,%ld", &command, &value) != 2) {
+  if (sscanf(serialData.c_str(), "%ld,%ld,%ld", &command, &value, &value2) < 2) {
     Serial.print("ERR invalid command: ");
     Serial.println(serialData);
     return;
@@ -249,6 +283,52 @@ void parseserial() {
       Serial.println(streamDecimation);
       break;
 
+    case 11: {
+      uint32_t rate = (uint32_t)max(value, 10L);
+      if (rate > 250) rate = 250;
+      sampleRateHz = rate;
+      samplePeriodUs = 1000000UL / sampleRateHz;
+      Serial.print("OK Sample rate ");
+      Serial.print(sampleRateHz);
+      Serial.println(" Hz");
+      break;
+    }
+
+    case 12:
+      schedCount = 0;
+      schedIdx = 0;
+      Serial.println("OK Schedule cleared");
+      break;
+
+    case 13:
+      if (schedCount >= MAX_SCHED) {
+        Serial.println("ERR Schedule full (max 32 steps)");
+        break;
+      }
+      schedTimesS[schedCount] = (uint32_t)max(value, 0L);
+      schedDac[schedCount] = clampDacCode(value2);
+      schedCount++;
+      Serial.print("OK Schedule step added: t=");
+      Serial.print(schedTimesS[schedCount - 1]);
+      Serial.print("s dac=");
+      Serial.println(schedDac[schedCount - 1]);
+      break;
+
+    case 14:
+      schedIdx = 0;
+      schedStartUs = micros();
+      schedRunning = true;
+      Serial.print("OK Schedule started (");
+      Serial.print(schedCount);
+      Serial.println(" steps)");
+      break;
+
+    case 15:
+      schedRunning = false;
+      schedIdx = 0;
+      Serial.println("OK Schedule stopped");
+      break;
+
     default:
       Serial.print("ERR unknown command: ");
       Serial.println(command);
@@ -259,12 +339,15 @@ void parseserial() {
 void setDeviceOperating(bool enable) {
   if (enable) {
     setVisLed(visledlevel);
+    lastSampleUs = micros();
     isoperating = true;
     setIndicatorLed(true);
     Serial.println("OK Device ON");
   } else {
     isoperating = false;
     streamAdc = false;
+    schedRunning = false;
+    schedIdx = 0;
     setIndicatorLed(false);
     setVisLed(0);
     digitalWrite(IRLED_PIN, LOW);
@@ -319,6 +402,8 @@ void printStatus() {
   Serial.print(streamAdc ? 1 : 0);
   Serial.print(",streamDecimation=");
   Serial.print(streamDecimation);
+  Serial.print(",sampleRateHz=");
+  Serial.print(sampleRateHz);
   Serial.print(",visDac=");
   Serial.print(visledlevel);
   Serial.print(",visDacVoltsApprox=");
@@ -327,6 +412,12 @@ void printStatus() {
   Serial.print(visibleGain);
   Serial.print(",irGain=");
   Serial.print(irGain);
+  Serial.print(",schedCount=");
+  Serial.print(schedCount);
+  Serial.print(",schedIdx=");
+  Serial.print(schedIdx);
+  Serial.print(",schedRunning=");
+  Serial.print(schedRunning ? 1 : 0);
   Serial.print(",busy=");
   Serial.print(digitalRead(PIN_ADC_BUSY));
   Serial.print(",frstdata=");

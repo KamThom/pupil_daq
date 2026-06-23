@@ -8,6 +8,7 @@ from daq_gui.protocol import (
     command,
     parse_line,
     raw_to_signed,
+    vis_dac_code_to_current_ma,
 )
 
 
@@ -41,6 +42,9 @@ class ProtocolTests(unittest.TestCase):
 
     def test_formats_command(self) -> None:
         self.assertEqual(command(10, 100), "10,100\n")
+
+    def test_converts_dac_code_to_visible_led_current(self) -> None:
+        self.assertAlmostEqual(vis_dac_code_to_current_ma(248), 2.0, places=2)
 
 
 if __name__ == "__main__":

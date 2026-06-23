@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 *.csv
+.claude
+CLAUDE.md
+.DS_Store

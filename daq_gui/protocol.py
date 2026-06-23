@@ -5,6 +5,9 @@ from typing import Mapping
 
 
 ADC_FULL_SCALE_VOLTS = 5.0
+VIS_LED_DAC_REFERENCE_VOLTS = 3.3
+VIS_LED_SENSE_RESISTOR_OHMS = 100.0
+VIS_LED_MAX_CURRENT_MA = VIS_LED_DAC_REFERENCE_VOLTS / VIS_LED_SENSE_RESISTOR_OHMS * 1000.0
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,13 @@ class Message:
     text: str
 
 
-ParsedLine = DataFrame | SingleRead | Status | Message
+@dataclass(frozen=True)
+class SchedEvent:
+    time_s: int
+    dac_code: int
+
+
+ParsedLine = DataFrame | SingleRead | Status | Message | SchedEvent
 
 
 def raw_to_signed(raw: int) -> int:
@@ -84,6 +93,15 @@ def parse_line(line: str) -> ParsedLine:
                 values[key] = value
         return Status(values)
 
+    if line.startswith("SCHED,"):
+        parts = line.split(",")
+        if len(parts) == 3:
+            try:
+                return SchedEvent(time_s=int(parts[1]), dac_code=int(parts[2]))
+            except ValueError:
+                pass
+        return Message("error", f"Malformed SCHED line: {line}")
+
     if line.startswith("ERR"):
         return Message("error", line)
     if line.startswith("OK"):
@@ -94,3 +112,27 @@ def parse_line(line: str) -> ParsedLine:
 def command(command_id: int, value: int) -> str:
     return f"{command_id},{value}\n"
 
+
+def command_schedule_clear() -> str:
+    return "12,0\n"
+
+
+def command_schedule_step(time_s: int, dac_code: int) -> str:
+    return f"13,{time_s},{dac_code}\n"
+
+
+def command_schedule_start() -> str:
+    return "14,0\n"
+
+
+def command_schedule_stop() -> str:
+    return "15,0\n"
+
+
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def vis_dac_code_to_current_ma(dac_code: int) -> float:
+    dac_code = clamp(dac_code, 0, 4095)
+    return dac_code / 4095 * VIS_LED_MAX_CURRENT_MA

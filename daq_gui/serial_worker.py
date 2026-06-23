@@ -61,8 +61,10 @@ class SerialWorker:
             self._port.reset_input_buffer()
             self.incoming.put(ConnectionEvent(True, f"Connected to {port_name}"))
 
-            while not self._stop_event.is_set():
+            while True:
                 self._write_pending()
+                if self._stop_event.is_set():
+                    break
                 raw = self._port.readline()
                 if raw:
                     self.incoming.put(raw.decode("utf-8", errors="replace").strip())
@@ -83,4 +85,3 @@ class SerialWorker:
             except queue.Empty:
                 return
             self._port.write(text.encode("ascii"))
-

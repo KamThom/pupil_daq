@@ -14,7 +14,7 @@ A pupillometry data acquisition system that measures pupil size and movement usi
 | Indicator LED | — | GPIO | Pin 1 |
 | I2C bus | — | — | SDA=3, SCL=4 |
 
-The firmware reads 4 ADC channels: CH1 (IR photodiode), CH2 (visible photodiode), CH3 (VIS LED current sense), CH4 (IR LED current sense). The main loop alternates IR LED on/off and samples both states. CSV recording and the log capture the full `high`/`low`/`high − low` data for all 4 channels, but the live GUI plot only shows raw LED-on (`high`) readings for CH1 and CH2 (see "Running the GUI" below).
+The firmware reads 4 ADC channels: CH1 (IR photodiode), CH2 (visible photodiode), CH3 (VIS LED current sense), CH4 (IR LED current sense). The main loop alternates IR LED on/off and samples both states. CSV recording captures the full `high`/`low`/`high − low` data for all 4 channels. The live GUI plot always shows raw LED-on (`high`) readings for CH1 and CH2 on its top two subplots; the third subplot is selectable (VIS LED current, or CH1–CH4) — see "Running the GUI" below.
 
 ## Repo layout
 
@@ -75,7 +75,7 @@ You can also control each board individually from its own tab.
 ### Per-device controls
 
 - **VIS LED current** — set as a DAC code (0–4095); the label next to the spinbox shows the equivalent mA before you apply it.
-- **Live plot** — three stacked subplots in **volts / mA vs. elapsed time (seconds)**: CH1 IR PD (top, blue), CH2 VIS PD (middle, red), VIS LED current (bottom, green step function). Rolling 30-second window; IR and VIS PD channels auto-scale independently. Dashed yellow vertical lines mark events across all three subplots (device on/off, LED and gain changes, stream state, schedule fires, etc.). Requires `matplotlib` (listed in `requirements.txt`).
+- **Live plot** — three stacked subplots vs. elapsed time (seconds): CH1 IR PD (top, blue, volts) and CH2 VIS PD (middle, red, volts) are fixed. The bottom subplot is selectable via the **"Plot 3"** dropdown: VIS LED current (commanded, mA, green step function — the default), or CH1/CH2/CH3/CH4 raw readings in volts. CH3 (VIS LED current sense) and CH4 (IR LED current sense) are otherwise not shown anywhere in the live view, so this is the way to inspect them without hardware. Rolling 30-second window; each subplot auto-scales independently. Dashed yellow vertical lines mark events across all three subplots (device on/off, LED and gain changes, stream state, schedule fires, etc.). Requires `matplotlib` (listed in `requirements.txt`).
 - **Disconnect / Connect** — sends a stop-device command before closing the port; the board is left idle rather than running.
 - **Stream decimation** — the firmware sends every Nth sample's `DATA` line; default 10. Lower = more data; higher = less serial traffic.
 - **Sample rate** — set in the Streaming section (10–250 Hz, default 100 Hz). The firmware gates samples with `micros()` so serial parsing still runs between samples.
